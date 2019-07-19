@@ -3,13 +3,15 @@ version: '3.4'
 services:
   vpn:
     image: dperson/openvpn-client
-    # cap_add, security_opt, and volume required for the image to function
     cap_add:
       - net_admin
     environment:
-      TZ: 'EST5EDT'
+      TZ: Europe/Stockholm
     networks:
-      - default
+      - openvpn
+    dns:
+      - 209.222.18.222
+      - 209.222.18.218
     read_only: true
     tmpfs:
       - /run
@@ -19,51 +21,117 @@ services:
       - label:disable
     stdin_open: true
     tty: true
+    devices:
+      - /dev/net/tun
     volumes:
-      - /dev/net:/dev/net:z
-    # Put .ovpn configuration file in the /vpn directory (in "volumes:" above or
-    # launch using the command line arguments, IE pick one:
-    #  - ./vpn:/vpn
-    # command: 'server;user;password[;port]'
+      - ./vpn:/vpn
+    command: '-f "" -d'
 
-  # Replace "service1" with and image with an actual service you want to run
-  service1:
-    image: docker_hub_user/container_name
+  transmission:
+    image: dperson/transmission
     depends_on:
       - vpn
     environment:
-      TZ: 'EST5EDT'
+      TZ: Europe/Stockholm
     network_mode: "service:vpn"
     restart: unless-stopped
     stdin_open: true
     tty: true
     volumes:
-      - /srv/service1:/var/lib/service1:Z
+      - /path/to/Transmission:/var/lib/transmission-daemon:Z
+    labels:
+      - "traefik.enable=true"
+      - "traefik.port=9091"
+      - "traefik.frontend.rule=Host:transmission" 
 
-  web:
-    image: dperson/nginx
+  sonarr:
+    image: linuxserver/sonarr
     depends_on:
-      - service1
+      - vpn
+      - transmission
+      - jackett
+    network_mode: "service:vpn"
     environment:
-      TZ: 'EST5EDT'
-    links:
-      - vpn:service1
-    networks:
-      - default
-    ports:
-      - "80:80"
-      - "443:443"
-    read_only: true
-    tmpfs:
-      - /run
-      - /tmp
-      - /var/cache/nginx
+      TZ: Europe/Stockholm
+    volumes:
+      - /path/to/Sonarr/config:/config
+      - /path/to/Sonarr/tv:/tv
+      - /path/to/Transmission/downloads:/var/lib/transmission-daemon/downloads
+    #ports:
+    #  - 8989:8989
     restart: unless-stopped
-    stdin_open: true
-    tty: true
-    command: -w "http://service1:8888;/service1"
-    # service1 shares the network stack of vpn. The service can by reached using
-    # the name of the service as a hostname.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.port=8989"
+      - "traefik.frontend.rule=Host:sonarr" 
+
+  radarr:
+    image: linuxserver/radarr
+    depends_on:
+      - vpn
+      - transmission
+      - jackett
+    network_mode: "service:vpn"
+    environment:
+      TZ: Europe/Stockholm
+    volumes:
+      - /path/to/Radarr/config:/config
+      - /path/to/Radarr/movies:/movies
+      - /path/to/Transmission/downloads:/var/lib/transmission-daemon/downloads
+    #ports:
+    #  - 7878:7878
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.port=7878"
+      - "traefik.frontend.rule=Host:radarr"       
+
+  jackett:
+    image: linuxserver/jackett
+    depends_on:
+      - vpn
+    network_mode: "service:vpn"
+    environment:
+      TZ: Europe/Stockholm
+    volumes:
+      - /path/to/Jackett/config:/config
+      - /path/to/Jackett/downloads:/downloads
+    #ports:
+    #  - 9117:9117
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.port=9117"
+      - "traefik.frontend.rule=Host:jackett" 
+
+  traefik:
+    image: traefik:alpine
+    depends_on:
+      - transmission
+      - sonarr
+      - radarr
+      - jackett
+    links:
+      - vpn:transmission
+      - vpn:sonarr
+      - vpn:radarr
+      - vpn:jackett  
+    ports:
+      - 80:80
+    # - 8080:8080
+    networks:
+      - openvpn      
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.port=8080"
+      - "traefik.frontend.rule=Host:traefik"        
+    command:
+      - --api
+      - --docker
+      - --docker.exposedByDefault=false
+    # - --logLevel=DEBUG
 
 networks:
-  default:
+  openvpn:

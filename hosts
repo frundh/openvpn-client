@@ -1,0 +1,5 @@
+127.0.0.1 sonarr
+127.0.0.1 radarr
+127.0.0.1 transmission
+127.0.0.1 jackett
+127.0.0.1 traefik
