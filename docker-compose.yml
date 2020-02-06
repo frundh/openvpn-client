@@ -133,5 +133,14 @@ services:
       - --docker.exposedByDefault=false
     # - --logLevel=DEBUG
 
+  unrar:
+    build:
+      context: ./cron
+    depends_on:
+      - transmission
+    volumes:
+      - /j/Transmission/downloads:/data
+    restart: unless-stopped
+
 networks:
   openvpn:
